@@ -1,0 +1,12 @@
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  labels:
+    k8s-app: nginx-ingress-controller
+  name: nginx-ingress-controller
+spec:
+  backend:
+    serviceName: nginx-ingress-controller
+    servicePort: 80
+  tls:
+  - secretName: nginx-ingress-controller-selfsigned
