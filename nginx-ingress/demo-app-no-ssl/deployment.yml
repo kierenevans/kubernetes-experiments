@@ -1,0 +1,36 @@
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  labels:
+    component-identifier: web
+  name: web
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      component-identifier: web
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        component-identifier: web
+      name: web
+    spec:
+      containers:
+      - env:
+        - name: SYMFONY_ENV
+          value: prod
+        - name: WEB_HTTP
+          value: "true"
+        image: docker.io/sroze/cp-demo-symfony:46bdca841e5fe227ce7eef7f3d98b2b8a4a9c288
+        imagePullPolicy: Always
+        name: web
+        ports:
+        - containerPort: 80
+          name: web80
+          protocol: TCP
+      restartPolicy: Always

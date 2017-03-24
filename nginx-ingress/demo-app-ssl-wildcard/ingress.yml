@@ -3,12 +3,15 @@ kind: Ingress
 metadata:
   annotations:
     kubernetes.io/ingress.class: nginx
+    ingress.kubernetes.io/secure-backends: "true"
   name: web
 spec:
   rules:
-  - host: something.continuouspipe.net
+  - host: demo-app-ssl-w.foo.continuouspipe.net
     http:
       paths:
       - backend:
           serviceName: web
-          servicePort: 80
+          servicePort: 443
+status:
+  loadBalancer: {}
