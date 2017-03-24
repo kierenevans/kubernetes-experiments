@@ -1,0 +1,41 @@
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  labels:
+    component-identifier: web
+  name: web
+  namespace: feature-add-ingress-manual
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      component-identifier: web
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        component-identifier: web
+      name: web
+    spec:
+      containers:
+      - image: quay.io/inviqa_images/nginx_proxy_test:a8b6aefcdb1c6f1a51b7a9f34706846311043d28
+        imagePullPolicy: Always
+        name: web
+        ports:
+        - containerPort: 80
+          name: web80
+          protocol: TCP
+        - containerPort: 443
+          name: web443
+          protocol: TCP
+        resources: {}
+        terminationMessagePath: /dev/termination-log
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      securityContext: {}
+      terminationGracePeriodSeconds: 30

@@ -1,0 +1,22 @@
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    ingress.kubernetes.io/secure-backends: "true"
+  name: web
+  namespace: feature-add-ingress-manual
+spec:
+  tls:
+  - secretName: feature-add-ingress-sslcert
+    hosts:
+    - something.continuouspipe.net
+  rules:
+  - host: something.continuouspipe.net
+    http:
+      paths:
+      - backend:
+          serviceName: web
+          servicePort: 443
+status:
+  loadBalancer: {}
