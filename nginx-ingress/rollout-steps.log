@@ -24,6 +24,8 @@ $ kubectl --namespace=continuous-pipe-system create -f nginx-ingress/default-bac
 service "default-http-backend" created
 $ kubectl --namespace=continuous-pipe-system create -f nginx-ingress/default-backend/deployment.yml
 deployment "default-http-backend" created
+$ kubectl --namespace=continuous-pipe-system create -f nginx-ingress/ingress-controller/nginx-load-balancer-conf.yml
+configmap "nginx-load-balancer-conf" created
 $ kubectl --namespace=continuous-pipe-system create -f nginx-ingress/ingress-controller/ssl-cert.yml
 secret "nginx-ingress-controller-selfsigned" created
 $ kubectl --namespace=continuous-pipe-system create -f nginx-ingress/ingress-controller/service.yml
