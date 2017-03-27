@@ -1,45 +1,75 @@
-$ kubectl get ingress --all-namespaces
-NAMESPACE                                                         NAME                       HOSTS     ADDRESS          PORTS     AGE
-b8dcf63a-0811-11e7-ad93-0a580a8403bb-feature-add-ing-142005e4fb   https                      *         35.186.252.117   80, 443   48m
-b8dcf63a-0811-11e7-ad93-0a580a8403bb-feature-add-ingress          https                      *         104.199.45.112   80, 443   6h
-continuous-pipe-system                                            nginx-ingress-controller   *         107.178.251.68   80, 443   1h
+## Annotate any existing ingresses
 
-# INGRESS="$(kubectl get ingress --all-namespaces -o jsonpath='{range .items[*]}{.metadata.namespace}{"\t"}{.metadata.name}{"\t"}{.metadata.annotations}{"\n"}{end}' | grep -v kubernetes.io/ingress.class)"
-# if [ -n "$INGRESS" ]; then echo $INGRESS | cut -f1,2 | awk '{print "kubectl --namespace=",$1,"annotate ingress",$2,"kubernetes.io/ingress.class=gce"}'; fi
+Existing ingresses that don't have an "ingress.class" will be fought over by a second ingress controller, with a constant fight between controllers to own the ingress.
 
-Run the annotate step:
+Add an annotation with the right annotation - "gce" if hosted in Google Cloud. The following will generate commands that you can run:
+```
 INGRESS="$(kubectl get ingress --all-namespaces -o jsonpath='{range .items[*]}{.metadata.namespace}{"\t"}{.metadata.name}{"\t"}{.metadata.annotations}{"\n"}{end}' | grep -v kubernetes.io/ingress.class)"
 if [ -n "$INGRESS" ]; then echo $INGRESS | cut -f1,2 | awk '{print "kubectl --namespace="$1" annotate ingress "$2" kubernetes.io/ingress.class=gce"}'; fi
-
-
-1. `hem ops generate-self-signed-cert nginx-proxy-test.example` | tee cert > key
-2. base64 cert
-3. base64 key
-4. update nginx-ingress/ingress-controller/ssl-cert.yml with values
-5.
-```
-$ kubectl create ns continuous-pipe-system
-namespace "continuous-pipe-system" created
-$ kubectl --namespace=continuous-pipe-system create -f nginx-ingress/default-backend/service.yml
-service "default-http-backend" created
-$ kubectl --namespace=continuous-pipe-system create -f nginx-ingress/default-backend/deployment.yml
-deployment "default-http-backend" created
-$ kubectl --namespace=continuous-pipe-system create -f nginx-ingress/ingress-controller/nginx-load-balancer-conf.yml
-configmap "nginx-load-balancer-conf" created
-$ kubectl --namespace=continuous-pipe-system create -f nginx-ingress/ingress-controller/ssl-cert.yml
-secret "nginx-ingress-controller-selfsigned" created
-$ kubectl --namespace=continuous-pipe-system create -f nginx-ingress/ingress-controller/service.yml
-service "nginx-ingress-controller" created
-$ kubectl --namespace=continuous-pipe-system create -f nginx-ingress/ingress-controller/gke-ingress.yml
-ingress "nginx-ingress-controller" created
-$ kubectl --namespace=continuous-pipe-system create -f nginx-ingress/ingress-controller/deployment.yml
-deployment "nginx-ingress-controller" created
 ```
 
+## Get a wildcard SSL certificate for the cluster
 
+### Self signed certificate
+To generate a self signed certificate for the domain name you wish to assign to the cluster where the nginx ingress controller is deployed:
+
+```
+openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout star.foo.continuouspipe.net.key -out star.foo.continuouspipe.net.crt -subj "/CN=*.foo.continuouspipe.net/O=CP"`
+```
+
+### Where to place it:
+
+Base64 the contents of both the certificate and key, e.g.:
+```
+base64 star.foo.continuouspipe.net.key
+base64 star.foo.continuouspipe.net.crt
+```
+
+Update the vlaues in `nginx-ingress/ingress-controller/nginx-ingress-controller-wildcard-ssl-certificate.sslcert.yml` with the base64 key and certificate values.
+
+## Deploy the ingress controller
+
+Deploy a default backend to serve if no server is found for a given hostname:
+
+```
+kubectl create ns continuouspipe-system
+kubectl --namespace=continuouspipe-system create -f nginx-ingress/default-backend/service.yml
+kubectl --namespace=continuouspipe-system create -f nginx-ingress/default-backend/deployment.yml
+```
+
+Deploy the ingress controller:
+```
+kubectl --namespace=continuouspipe-system create -f nginx-ingress/ingress-controller/nginx-load-balancer-conf.yml
+kubectl --namespace=continuouspipe-system create -f nginx-ingress/ingress-controller/nginx-ingress-controller-wildcard-ssl-certificate.sslcert.yml
+kubectl --namespace=continuouspipe-system create -f nginx-ingress/ingress-controller/service.yml
+kubectl --namespace=continuouspipe-system create -f nginx-ingress/ingress-controller/deployment.yml
+```
+
+## Set up a wildcard DNS entry
+
+The wildcard DNS should point to the service exposed for the ingress controller:
+
+```
+$ kubectl --namespace=continuouspipe-system get service -o yaml
+[...]
+  status:
+    loadBalancer:
+      ingress:
+      - ip: 123.123.123.123
+````
+
+```
+123.123.123.123 *.foo.continuouspipe.net
+```
+
+
+## Deploy your app that uses the nginx ingress controller
+
+To deploy the demo SSL app:
 ```
 kubectl create ns feature-add-ingress-manual
-kubectl --namespace=feature-add-ingress-manual create -f nginx-ingress/demo-app/deployment.yml
-kubectl --namespace=feature-add-ingress-manual create -f nginx-ingress/demo-app/service.yml
-kubectl --namespace=feature-add-ingress-manual create -f nginx-ingress/demo-app/ingress.yml
+kubectl --namespace=feature-add-ingress-manual create -f nginx-ingress/ingress-controller/nginx-ingress-controller-wildcard-ssl-certificate.sslcert.yml
+kubectl --namespace=feature-add-ingress-manual create -f nginx-ingress/demo-app-ssl/feature-add-ingress.services.yml
+kubectl --namespace=feature-add-ingress-manual create -f nginx-ingress/demo-app-ssl/feature-add-ingress.ingress.yml
+kubectl --namespace=feature-add-ingress-manual create -f nginx-ingress/demo-app-ssl/feature-add-ingress.deployment.yml
 ```

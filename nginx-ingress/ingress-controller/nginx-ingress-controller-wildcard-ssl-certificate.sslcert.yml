@@ -5,5 +5,4 @@ data:
 kind: Secret
 metadata:
   name: nginx-ingress-controller-wildcard-ssl-certificate
-  namespace: feature-add-ingress-manual
 type: kubernetes.io/tls
