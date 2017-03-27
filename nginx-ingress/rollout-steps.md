@@ -25,7 +25,7 @@ base64 star.foo.continuouspipe.net.key
 base64 star.foo.continuouspipe.net.crt
 ```
 
-Update the vlaues in `nginx-ingress/ingress-controller/nginx-ingress-controller-wildcard-ssl-certificate.sslcert.yml` with the base64 key and certificate values.
+Update the values in `nginx-ingress/ingress-controller/nginx-ingress-controller-wildcard-ssl-certificate.sslcert.yml` with the base64 key and certificate values.
 
 ## Deploy the ingress controller
 
@@ -48,10 +48,10 @@ kubectl --namespace=continuouspipe-system create -f nginx-ingress/ingress-contro
 
 ## Set up a wildcard DNS entry
 
-The wildcard DNS should point to the service exposed for the ingress controller:
+The wildcard DNS should point to the ingress exposed for the ingress controller:
 
 ```
-$ kubectl --namespace=continuouspipe-system get service -o yaml
+$ kubectl --namespace=continuouspipe-system get ingress -o yaml
 [...]
   status:
     loadBalancer:
