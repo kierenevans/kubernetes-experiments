@@ -23,7 +23,7 @@ spec:
       name: web
     spec:
       containers:
-      - image: quay.io/inviqa_images/nginx_proxy_test:a8b6aefcdb1c6f1a51b7a9f34706846311043d28
+      - image: docker.io/kierenevans/nginx_proxy_test:test3
         imagePullPolicy: Always
         name: web
         ports:
