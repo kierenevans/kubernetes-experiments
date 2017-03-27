@@ -42,6 +42,7 @@ Deploy the ingress controller:
 kubectl --namespace=continuouspipe-system create -f nginx-ingress/ingress-controller/nginx-load-balancer-conf.yml
 kubectl --namespace=continuouspipe-system create -f nginx-ingress/ingress-controller/nginx-ingress-controller-wildcard-ssl-certificate.sslcert.yml
 kubectl --namespace=continuouspipe-system create -f nginx-ingress/ingress-controller/service.yml
+kubectl --namespace=continuouspipe-system create -f nginx-ingress/ingress-controller/gke-ingress.yml
 kubectl --namespace=continuouspipe-system create -f nginx-ingress/ingress-controller/deployment.yml
 ```
 
