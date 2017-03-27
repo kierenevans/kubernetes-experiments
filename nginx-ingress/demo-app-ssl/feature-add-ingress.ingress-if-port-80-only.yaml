@@ -8,7 +8,7 @@ metadata:
   namespace: feature-add-ingress-manual
 spec:
   rules:
-  - host: something.continuouspipe.net
+  - host: hello.foo.continuouspipe.net
     http:
       paths:
       - backend:

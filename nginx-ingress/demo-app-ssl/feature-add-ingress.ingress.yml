@@ -8,11 +8,11 @@ metadata:
   namespace: feature-add-ingress-manual
 spec:
   tls:
-  - secretName: feature-add-ingress-sslcert
+  - secretName: nginx-ingress-controller-wildcard-ssl-certificate
     hosts:
-    - something.continuouspipe.net
+    - hello.foo.continuouspipe.net
   rules:
-  - host: something.continuouspipe.net
+  - host: hello.foo.continuouspipe.net
     http:
       paths:
       - backend:
