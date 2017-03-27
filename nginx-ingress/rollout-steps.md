@@ -71,6 +71,6 @@ To deploy the demo SSL app:
 kubectl create ns feature-add-ingress-manual
 kubectl --namespace=feature-add-ingress-manual create -f nginx-ingress/ingress-controller/nginx-ingress-controller-wildcard-ssl-certificate.sslcert.yml
 kubectl --namespace=feature-add-ingress-manual create -f nginx-ingress/demo-app-ssl/feature-add-ingress.services.yml
-kubectl --namespace=feature-add-ingress-manual create -f nginx-ingress/demo-app-ssl/feature-add-ingress.ingress.yml
+kubectl --namespace=feature-add-ingress-manual create -f nginx-ingress/demo-app-ssl/feature-add-ingress.ingress-if-port-80-only.yml
 kubectl --namespace=feature-add-ingress-manual create -f nginx-ingress/demo-app-ssl/feature-add-ingress.deployment.yml
 ```
