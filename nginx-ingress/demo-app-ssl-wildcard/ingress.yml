@@ -3,7 +3,6 @@ kind: Ingress
 metadata:
   annotations:
     kubernetes.io/ingress.class: nginx
-    ingress.kubernetes.io/secure-backends: "true"
   name: web
 spec:
   rules:
@@ -12,6 +11,6 @@ spec:
       paths:
       - backend:
           serviceName: web
-          servicePort: 443
+          servicePort: 80
 status:
   loadBalancer: {}

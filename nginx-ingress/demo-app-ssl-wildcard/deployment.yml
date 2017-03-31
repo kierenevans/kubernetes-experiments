@@ -24,8 +24,6 @@ spec:
       - env:
         - name: SYMFONY_ENV
           value: prod
-        - name: WEB_HTTP
-          value: "true"
         image: docker.io/sroze/cp-demo-symfony:46bdca841e5fe227ce7eef7f3d98b2b8a4a9c288
         imagePullPolicy: Always
         name: web
