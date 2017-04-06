@@ -50,11 +50,12 @@ spec:
               fieldRef:
                 fieldPath: metadata.namespace
           - name: SSL_CERT
-            value: ""
+            value: "Fill me in!"
           - name: SSL_KEY
-            value: ""
+            value: "Fill me in!"
         args:
-        - /bin/bash /usr/local/bin/boot.sh
+        - /bin/bash
+        - /usr/local/bin/boot.sh
         - --default-backend-service=$(POD_NAMESPACE)/default-http-backend
         - --configmap=$(POD_NAMESPACE)/nginx-load-balancer-conf
         - --publish-service=$(POD_NAMESPACE)/nginx-ingress-controller
