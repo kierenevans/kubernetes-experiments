@@ -25,7 +25,7 @@ base64 star.foo.continuouspipe.net.key
 base64 star.foo.continuouspipe.net.crt
 ```
 
-Update the values in `nginx-ingress/ingress-controller/nginx-ingress-controller-wildcard-ssl-certificate.sslcert.yml` with the base64 key and certificate values.
+Update the values in `nginx-ingress/ingress-controller/deployment.yml` with the base64 key and certificate values.
 
 ## Deploy the ingress controller
 
@@ -40,7 +40,6 @@ kubectl --namespace=continuouspipe-system create -f nginx-ingress/default-backen
 Deploy the ingress controller:
 ```
 kubectl --namespace=continuouspipe-system create -f nginx-ingress/ingress-controller/nginx-load-balancer-conf.yml
-kubectl --namespace=continuouspipe-system create -f nginx-ingress/ingress-controller/nginx-ingress-controller-wildcard-ssl-certificate.sslcert.yml
 kubectl --namespace=continuouspipe-system create -f nginx-ingress/ingress-controller/service.yml
 kubectl --namespace=continuouspipe-system create -f nginx-ingress/ingress-controller/deployment.yml
 ```
