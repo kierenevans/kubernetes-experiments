@@ -1,4 +1,5 @@
-{{ $cfg := .Cfg }}
+{{ $cfg := .Cfg }} 
+{{ $IsIPV6Enabled := .IsIPV6Enabled }}
 {{ $healthzURI := .HealthzURI }}
 {{ $backends := .Backends }}
 {{ $proxyHeaders := .ProxySetHeaders }}
@@ -145,6 +146,12 @@ http {
         text             text/plain;
     }
 
+    # Obtain best http host
+    map $http_host $best_http_host {
+        default          $http_host;
+        ''               $host;
+    }
+
     server_name_in_redirect off;
     port_in_redirect        off;
 
@@ -177,6 +184,8 @@ http {
     ssl_dyn_rec_size_lo 0;
     {{ end }}
 
+    ssl_ecdh_curve {{ $cfg.SSLECDHCurve }};
+
     {{ if .CustomErrors }}
     # Custom error pages
     proxy_intercept_errors on;
@@ -208,13 +217,15 @@ http {
 
     {{ $backlogSize := .BacklogSize }}
     {{ range $index, $server := .Servers }}
-{{ if not (empty $server.SSLCertificate) }}
     server {
         server_name {{ $server.Hostname }};
-        listen {{ if not $cfg.DisableIpv6 }}[::]:{{ end }}80{{ if $cfg.UseProxyProtocol }} proxy_protocol{{ end }}{{ if eq $server.Hostname "_"}} default_server {{ if not $cfg.DisableIpv6 }}ipv6only=off{{end}} reuseport backlog={{ $backlogSize }}{{end}};
+        listen 80{{ if $cfg.UseProxyProtocol }} proxy_protocol{{ end }}{{ if eq $server.Hostname "_"}} default_server reuseport backlog={{ $backlogSize }}{{end}};
+        {{ if $IsIPV6Enabled }}listen [::]:80{{ if $cfg.UseProxyProtocol }} proxy_protocol{{ end }}{{ if eq $server.Hostname "_"}} default_server reuseport backlog={{ $backlogSize }}{{ end }};{{ end }}
+
         {{/* Listen on 442 because port 443 is used in the stream section */}}
         {{/* This listen on port 442 cannot contains proxy_protocol directive because port 443 is in charge of decoding the protocol */}}
-        {{ if not (empty $server.SSLCertificate) }}listen {{ if gt (len $passthroughBackends) 0 }}442{{ else }}{{ if not $cfg.DisableIpv6 }}[::]:{{ end }}443 {{ if $cfg.UseProxyProtocol }} proxy_protocol {{ end }}{{ end }} {{ if eq $server.Hostname "_"}} default_server {{ if not $cfg.DisableIpv6 }}ipv6only=off{{end}} reuseport backlog={{ $backlogSize }}{{end}} ssl {{ if $cfg.UseHTTP2 }}http2{{ end }};
+        {{ if not (empty $server.SSLCertificate) }}listen {{ if gt (len $passthroughBackends) 0 }}442{{ else }}443 {{ if $cfg.UseProxyProtocol }} proxy_protocol {{ end }}{{ end }} {{ if eq $server.Hostname "_"}} default_server reuseport backlog={{ $backlogSize }}{{end}} ssl {{ if $cfg.UseHTTP2 }}http2{{ end }};
+        {{ if $IsIPV6Enabled }}{{ if not (empty $server.SSLCertificate) }}listen {{ if gt (len $passthroughBackends) 0 }}[::]:442{{ else }}[::]:443 {{ end }}{{ if $cfg.UseProxyProtocol }} proxy_protocol {{ end }}{{ end }} {{ if eq $server.Hostname "_"}} default_server reuseport backlog={{ $backlogSize }}{{end}} ssl {{ if $cfg.UseHTTP2 }}http2{{ end }};{{ end }}
         {{/* comment PEM sha is required to detect changes in the generated configuration and force a reload */}}
         # PEM sha: {{ $server.SSLPemChecksum }}
         ssl_certificate                         {{ $server.SSLCertificate }};
@@ -222,7 +233,7 @@ http {
         {{ end }}
 
         {{ if (and (not (empty $server.SSLCertificate)) $cfg.HSTS) }}
-        more_set_headers                        "Strict-Transport-Security: max-age={{ $cfg.HSTSMaxAge }}{{ if $cfg.HSTSIncludeSubdomains }}; includeSubDomains{{ end }}; preload";
+        more_set_headers                        "Strict-Transport-Security: max-age={{ $cfg.HSTSMaxAge }}{{ if $cfg.HSTSIncludeSubdomains }}; includeSubDomains{{ end }}; {{ if $cfg.HSTSPreload }}preload{{ end }}";
         {{ end }}
 
         {{ if $cfg.EnableVtsStatus }}vhost_traffic_status_filter_by_set_key $geoip_country_code country::$server_name;{{ end }}
@@ -237,7 +248,19 @@ http {
         ssl_verify_client on;
         ssl_verify_depth {{ $location.CertificateAuth.ValidationDepth }};
         {{ end }}
+        
+        {{ if (or $location.Redirect.ForceSSLRedirect (and (not (empty $server.SSLCertificate)) $location.Redirect.SSLRedirect)) }}
+        # enforce ssl on server side
+        if ($pass_access_scheme = http) {
+            return 301 https://$best_http_host$request_uri;
+        }
+        {{ end }}
 
+        {{ if not (empty $location.Redirect.AppRoot)}}
+        if ($uri = /) {
+            return 302 {{ $location.Redirect.AppRoot }};
+        }
+        {{ end }}
         {{ if not (empty $authPath) }}
         location = {{ $authPath }} {
             internal;
@@ -252,7 +275,7 @@ http {
             proxy_set_header X-Original-URI $request_uri;
             proxy_set_header X-Scheme       $pass_access_scheme;
             {{ end }}
-            proxy_set_header            Host $host;
+            proxy_set_header            Host $best_http_host;
             proxy_pass_request_headers  on;
             set $target {{ $location.ExternalAuth.URL }};
             proxy_pass $target;
@@ -274,18 +297,16 @@ http {
             {{ if not (empty $authPath) }}
             # this location requires authentication
             auth_request {{ $authPath }};
+            {{- range $idx, $line := buildAuthResponseHeaders $location }}
+            {{ $line }}
+            {{- end }}
             {{ end }}
 
             {{ if not (empty $location.ExternalAuth.SigninURL) }}
             error_page 401 = {{ $location.ExternalAuth.SigninURL }};
             {{ end }}
 
-            {{ if (or $location.Redirect.ForceSSLRedirect (and (not (empty $server.SSLCertificate)) $location.Redirect.SSLRedirect)) }}
-            # enforce ssl on server side
-            if ($pass_access_scheme = http) {
-                return 301 https://$host$request_uri;
-            }
-            {{ end }}
+
             {{/* if the location contains a rate limit annotation, create one */}}
             {{ $limits := buildRateLimit $location }}
             {{ range $limit := $limits }}
@@ -308,7 +329,7 @@ http {
 
             client_max_body_size                    "{{ $location.Proxy.BodySize }}";
 
-            proxy_set_header Host                   $host;
+            proxy_set_header Host                   $best_http_host;
 
             # Pass the extracted client certificate to the backend
             {{ if not (empty $location.CertificateAuth.AuthSSLCert.CAFileName) }}
@@ -323,7 +344,7 @@ http {
             proxy_set_header                        Connection        $connection_upgrade;
 
             proxy_set_header X-Forwarded-For        $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Host       $host;
+            proxy_set_header X-Forwarded-Host       $best_http_host;
             proxy_set_header X-Forwarded-Port       $pass_port;
             proxy_set_header X-Forwarded-Proto      $pass_access_scheme;
             proxy_set_header X-Original-URI         $request_uri;
@@ -379,7 +400,7 @@ http {
         # with an external software (like sysdig)
         location /nginx_status {
             allow 127.0.0.1;
-            {{ if not $cfg.DisableIpv6 }}allow ::1;{{ end }}
+            {{ if $IsIPV6Enabled }}allow ::1;{{ end }}
             deny all;
 
             access_log off;
@@ -389,187 +410,6 @@ http {
 
         {{ template "CUSTOM_ERRORS" $cfg }}
     }
-{{ else }}
-    server {
-        server_name {{ $server.Hostname }};
-        listen {{ if not $cfg.DisableIpv6 }}[::]:{{ end }}80{{ if $cfg.UseProxyProtocol }} proxy_protocol{{ end }}{{ if eq $server.Hostname "_"}} default_server {{ if not $cfg.DisableIpv6 }}ipv6only=off{{end}} reuseport backlog={{ $backlogSize }}{{end}};
-        {{/* Listen on 442 because port 443 is used in the stream section */}}
-        {{/* This listen on port 442 cannot contains proxy_protocol directive because port 443 is in charge of decoding the protocol */}}
-        listen {{ if gt (len $passthroughBackends) 0 }}442{{ else }}{{ if not $cfg.DisableIpv6 }}[::]:{{ end }}443 {{ if $cfg.UseProxyProtocol }} proxy_protocol {{ end }}{{ end }} {{ if eq $server.Hostname "_"}} default_server {{ if not $cfg.DisableIpv6 }}ipv6only=off{{end}} reuseport backlog={{ $backlogSize }}{{end}} ssl {{ if $cfg.UseHTTP2 }}http2{{ end }};
-        {{/* comment PEM sha is required to detect changes in the generated configuration and force a reload */}}
-        # PEM sha: PLEASE_RELOAD_CONTAINER_IF_THIS_CHANGES
-        ssl_certificate                         "/etc/nginx/default-certificate.pem";
-        ssl_certificate_key                     "/etc/nginx/default-certificate.pem";
-
-        {{ if (and (not (empty $server.SSLCertificate)) $cfg.HSTS) }}
-        more_set_headers                        "Strict-Transport-Security: max-age={{ $cfg.HSTSMaxAge }}{{ if $cfg.HSTSIncludeSubdomains }}; includeSubDomains{{ end }}; preload";
-        {{ end }}
-
-        {{ if $cfg.EnableVtsStatus }}vhost_traffic_status_filter_by_set_key $geoip_country_code country::$server_name;{{ end }}
-
-        {{ range $location := $server.Locations }}
-        {{ $path := buildLocation $location }}
-        {{ $authPath := buildAuthLocation $location }}
-
-        {{ if not (empty $location.CertificateAuth.AuthSSLCert.CAFileName) }}
-        # PEM sha: {{ $location.CertificateAuth.AuthSSLCert.PemSHA }}
-        ssl_client_certificate              {{ $location.CertificateAuth.AuthSSLCert.CAFileName }};
-        ssl_verify_client on;
-        ssl_verify_depth {{ $location.CertificateAuth.ValidationDepth }};
-        {{ end }}
-
-        {{ if not (empty $authPath) }}
-        location = {{ $authPath }} {
-            internal;
-            set $proxy_upstream_name "internal";
-
-            {{ if not $location.ExternalAuth.SendBody }}
-            proxy_pass_request_body     off;
-            proxy_set_header            Content-Length "";
-            {{ end }}
-            {{ if not (empty $location.ExternalAuth.Method) }}
-            proxy_method {{ $location.ExternalAuth.Method }};
-            proxy_set_header X-Original-URI $request_uri;
-            proxy_set_header X-Scheme       $pass_access_scheme;
-            {{ end }}
-            proxy_set_header            Host $host;
-            proxy_pass_request_headers  on;
-            set $target {{ $location.ExternalAuth.URL }};
-            proxy_pass $target;
-        }
-        {{ end }}
-
-        location {{ $path }} {
-            set $proxy_upstream_name "{{ $location.Backend }}";
-
-            {{ if isLocationAllowed $location }}
-            {{ if gt (len $location.Whitelist.CIDR) 0 }}
-            {{ range $ip := $location.Whitelist.CIDR }}
-            allow {{ $ip }};{{ end }}
-            deny all;
-            {{ end }}
-
-            port_in_redirect {{ if $location.UsePortInRedirects }}on{{ else }}off{{ end }};
-
-            {{ if not (empty $authPath) }}
-            # this location requires authentication
-            auth_request {{ $authPath }};
-            {{ end }}
-
-            {{ if not (empty $location.ExternalAuth.SigninURL) }}
-            error_page 401 = {{ $location.ExternalAuth.SigninURL }};
-            {{ end }}
-
-            {{ if (or $location.Redirect.ForceSSLRedirect (and (not (empty $server.SSLCertificate)) $location.Redirect.SSLRedirect)) }}
-            # enforce ssl on server side
-            # if ($pass_access_scheme = http) {
-            #     return 301 https://$host$request_uri;
-            # }
-            {{ end }}
-            {{/* if the location contains a rate limit annotation, create one */}}
-            {{ $limits := buildRateLimit $location }}
-            {{ range $limit := $limits }}
-            {{ $limit }}{{ end }}
-
-            {{ if $location.BasicDigestAuth.Secured }}
-            {{ if eq $location.BasicDigestAuth.Type "basic" }}
-            auth_basic "{{ $location.BasicDigestAuth.Realm }}";
-            auth_basic_user_file {{ $location.BasicDigestAuth.File }};
-            {{ else }}
-            auth_digest "{{ $location.BasicDigestAuth.Realm }}";
-            auth_digest_user_file {{ $location.BasicDigestAuth.File }};
-            {{ end }}
-            proxy_set_header Authorization "";
-            {{ end }}
-
-            {{ if $location.EnableCORS }}
-            {{ template "CORS" }}
-            {{ end }}
-
-            client_max_body_size                    "{{ $location.Proxy.BodySize }}";
-
-            proxy_set_header Host                   $host;
-
-            # Pass the extracted client certificate to the backend
-            {{ if not (empty $location.CertificateAuth.AuthSSLCert.CAFileName) }}
-            proxy_set_header ssl-client-cert        $ssl_client_cert;
-            {{ end }}
-
-            # Pass Real IP
-            proxy_set_header X-Real-IP              $remote_addr;
-
-            # Allow websocket connections
-            proxy_set_header                        Upgrade           $http_upgrade;
-            proxy_set_header                        Connection        $connection_upgrade;
-
-            proxy_set_header X-Forwarded-For        $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Host       $host;
-            proxy_set_header X-Forwarded-Port       $pass_port;
-            proxy_set_header X-Forwarded-Proto      $pass_access_scheme;
-            proxy_set_header X-Original-URI         $request_uri;
-            proxy_set_header X-Scheme               $pass_access_scheme;
-
-            # mitigate HTTPoxy Vulnerability
-            # https://www.nginx.com/blog/mitigating-the-httpoxy-vulnerability-with-nginx/
-            proxy_set_header Proxy                  "";
-
-            # Custom headers
-            {{ range $k, $v := $proxyHeaders }}
-            proxy_set_header {{ $k }}                    "{{ $v }}";
-            {{ end }}
-
-            proxy_connect_timeout                   {{ $location.Proxy.ConnectTimeout }}s;
-            proxy_send_timeout                      {{ $location.Proxy.SendTimeout }}s;
-            proxy_read_timeout                      {{ $location.Proxy.ReadTimeout }}s;
-
-            proxy_redirect                          off;
-            proxy_buffering                         off;
-            proxy_buffer_size                       "{{ $location.Proxy.BufferSize }}";
-            proxy_buffers                           4 "{{ $location.Proxy.BufferSize }}";
-
-            proxy_http_version                      1.1;
-
-            proxy_cookie_domain                     {{ $location.Proxy.CookieDomain }};
-            proxy_cookie_path                       {{ $location.Proxy.CookiePath }};
-
-            {{/* rewrite only works if the content is not compressed */}}
-            {{ if $location.Redirect.AddBaseURL }}
-            proxy_set_header                        Accept-Encoding     "";
-            {{ end }}
-
-            {{/* Add any additional configuration defined */}}
-            {{ $location.ConfigurationSnippet }}
-
-            {{ buildProxyPass $backends $location }}
-            {{ else }}
-            #{{ $location.Denied }}
-            return 503;
-            {{ end }}
-        }
-        {{ end }}
-
-        {{ if eq $server.Hostname "_" }}
-        # health checks in cloud providers require the use of port 80
-        location {{ $healthzURI }} {
-            access_log off;
-            return 200;
-        }
-
-        # this is required to avoid error if nginx is being monitored
-        # with an external software (like sysdig)
-        location /nginx_status {
-            allow 127.0.0.1;
-            {{ if not $cfg.DisableIpv6 }}allow ::1;{{ end }}
-            deny all;
-
-            access_log off;
-            stub_status on;
-        }
-        {{ end }}
-
-        {{ template "CUSTOM_ERRORS" $cfg }}
-    }
-{{ end }}
 
     {{ end }}
 
@@ -578,7 +418,8 @@ http {
         # Use the port 18080 (random value just to avoid known ports) as default port for nginx.
         # Changing this value requires a change in:
         # https://github.com/kubernetes/contrib/blob/master/ingress/controllers/nginx/nginx/command.go#L104
-        listen {{ if not $cfg.DisableIpv6 }}[::]:{{ end }}18080 {{ if not $cfg.DisableIpv6 }}ipv6only=off{{end}} default_server reuseport backlog={{ .BacklogSize }};
+        listen 18080 default_server reuseport backlog={{ .BacklogSize }};
+        {{ if $IsIPV6Enabled }}listen [::]:18080 default_server reuseport backlog={{ .BacklogSize }};{{ end }}
 
         location {{ $healthzURI }} {
             access_log off;
@@ -664,7 +505,8 @@ stream {
     {{ buildSSLPassthroughUpstreams $backends .PassthroughBackends }}
 
     server {
-        listen                  {{ if not $cfg.DisableIpv6 }}[::]:{{ end }}443 {{ if not $cfg.DisableIpv6 }}ipv6only=off{{ end }}{{ if $cfg.UseProxyProtocol }} proxy_protocol{{ end }};
+        listen                  443 {{ if $cfg.UseProxyProtocol }} proxy_protocol{{ end }};
+        {{ if $IsIPV6Enabled }}listen                  [::]:443 {{ if $cfg.UseProxyProtocol }} proxy_protocol{{ end }};{{ end }}
         proxy_pass              $stream_upstream;
         ssl_preread             on;
     }
@@ -672,7 +514,7 @@ stream {
 
     # TCP services
     {{ range $i, $tcpServer := .TCPBackends }}
-    upstream {{ $tcpServer.Backend.Namespace }}-{{ $tcpServer.Backend.Name }}-{{ $tcpServer.Backend.Port }} {
+    upstream tcp-{{ $tcpServer.Backend.Namespace }}-{{ $tcpServer.Backend.Name }}-{{ $tcpServer.Backend.Port }} {
     {{ range $j, $endpoint := $tcpServer.Endpoints }}
         server                  {{ $endpoint.Address }}:{{ $endpoint.Port }};
     {{ end }}
@@ -680,22 +522,22 @@ stream {
 
     server {
         listen                  {{ $tcpServer.Port }};
-        proxy_pass              {{ $tcpServer.Backend.Namespace }}-{{ $tcpServer.Backend.Name }}-{{ $tcpServer.Backend.Port }};
+        proxy_pass              tcp-{{ $tcpServer.Backend.Namespace }}-{{ $tcpServer.Backend.Name }}-{{ $tcpServer.Backend.Port }};
     }
     {{ end }}
 
     # UDP services
     {{ range $i, $udpServer := .UDPBackends }}
-    upstream {{ $udpServer.Backend.Namespace }}-{{ $udpServer.Backend.Name }}-{{ $udpServer.Backend.Port }} {
+    upstream udp-{{ $udpServer.Backend.Namespace }}-{{ $udpServer.Backend.Name }}-{{ $udpServer.Backend.Port }} {
     {{ range $j, $endpoint := $udpServer.Endpoints }}
         server                  {{ $endpoint.Address }}:{{ $endpoint.Port }};
     {{ end }}
     }
 
     server {
-        listen                  {{ $udpServer.Port }};
+        listen                  {{ $udpServer.Port }} udp;
         proxy_responses         1;
-        proxy_pass              {{ $udpServer.Backend.Namespace }}-{{ $udpServer.Backend.Name }}-{{ $udpServer.Backend.Port }};
+        proxy_pass              udp-{{ $udpServer.Backend.Namespace }}-{{ $udpServer.Backend.Name }}-{{ $udpServer.Backend.Port }};
     }
     {{ end }}
 }
@@ -720,11 +562,11 @@ stream {
         # Om nom nom cookies
         #
         add_header 'Access-Control-Allow-Credentials' 'true';
-        add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS';
+        add_header 'Access-Control-Allow-Methods' 'GET, PUT, POST, DELETE, OPTIONS';
         #
         # Custom headers and headers various browsers *should* be OK with but aren't
         #
-        add_header 'Access-Control-Allow-Headers' 'DNT,X-CustomHeader,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type';
+        add_header 'Access-Control-Allow-Headers' 'DNT,X-CustomHeader,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Authorization';
         #
         # Tell client that this pre-flight info is valid for 20 days
         #
@@ -733,16 +575,24 @@ stream {
         add_header 'Content-Length' 0;
         return 204;
      }
-     if ($request_method = 'POST') {
-        add_header 'Access-Control-Allow-Origin' '*';
-        add_header 'Access-Control-Allow-Credentials' 'true';
-        add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS';
-        add_header 'Access-Control-Allow-Headers' 'DNT,X-CustomHeader,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type';
-     }
+     set $cors_method 0;
      if ($request_method = 'GET') {
-        add_header 'Access-Control-Allow-Origin' '*';
+        set $cors_method 1;
+     }
+     if ($request_method = 'PUT') {
+        set $cors_method 1;
+     }
+     if ($request_method = 'POST') {
+        set $cors_method 1;
+     }
+     if ($request_method = 'DELETE') {
+        set $cors_method 1;
+     }
+
+     if ($cors_method = 1) {
+        add_header 'Access-Control-Allow-Origin' '*' always;
         add_header 'Access-Control-Allow-Credentials' 'true';
-        add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS';
-        add_header 'Access-Control-Allow-Headers' 'DNT,X-CustomHeader,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type';
+        add_header 'Access-Control-Allow-Methods' 'GET, PUT, POST, DELETE, OPTIONS';
+        add_header 'Access-Control-Allow-Headers' 'DNT,X-CustomHeader,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Authorization';
      }
 {{ end }}

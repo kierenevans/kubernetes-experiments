@@ -23,7 +23,7 @@ spec:
       # hostNetwork: true
       terminationGracePeriodSeconds: 60
       containers:
-      - image: docker.io/kierenevans/nginx-ingress-controller:0.9.0-beta.3-mod11
+      - image: docker.io/kierenevans/nginx-ingress-controller:0.9.0-beta.3-issue572
         name: nginx-ingress-controller
         readinessProbe:
           httpGet:
