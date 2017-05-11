@@ -23,7 +23,7 @@ spec:
       # hostNetwork: true
       terminationGracePeriodSeconds: 60
       containers:
-      - image: quay.io/continuouspipe/nginx-ingress-controller:0.9.0.beta5
+      - image: gcr.io/google-containers/nginx-ingress-controller:0.9.0-beta.5
         name: nginx-ingress-controller
         readinessProbe:
           httpGet:
@@ -42,7 +42,7 @@ spec:
           failureThreshold: 10
         ports:
         - containerPort: 80
-        - containerPort: 443
+        - containerPort: 442
         env:
           - name: POD_NAME
             valueFrom:
@@ -52,13 +52,8 @@ spec:
             valueFrom:
               fieldRef:
                 fieldPath: metadata.namespace
-          - name: SSL_CERT
-            value: "Fill me in!"
-          - name: SSL_KEY
-            value: "Fill me in!"
         args:
-        - /bin/bash
-        - /usr/local/bin/boot.sh
+        - /nginx-ingress-controller
         - --default-backend-service=$(POD_NAMESPACE)/default-http-backend
         - --configmap=$(POD_NAMESPACE)/nginx-load-balancer-conf
         - --publish-service=$(POD_NAMESPACE)/nginx-ingress-controller

@@ -11,19 +11,23 @@ spec:
       labels:
         k8s-app: default-http-backend
     spec:
-      terminationGracePeriodSeconds: 60
       containers:
-      - name: default-http-backend
-        image: docker.io/sroze/landing-page:master
+      - image: gcr.io/google_containers/defaultbackend:1.0
+        imagePullPolicy: IfNotPresent
         livenessProbe:
+          failureThreshold: 3
           httpGet:
-            path: /
-            port: 80
+            path: /healthz
+            port: 8080
             scheme: HTTP
           initialDelaySeconds: 30
+          periodSeconds: 10
+          successThreshold: 1
           timeoutSeconds: 5
+        name: default-http-backend
         ports:
-        - containerPort: 80
+        - containerPort: 8080
+          protocol: TCP
         resources:
           limits:
             cpu: 10m
@@ -31,3 +35,8 @@ spec:
           requests:
             cpu: 10m
             memory: 20Mi
+        terminationMessagePath: /dev/termination-log
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      securityContext: {}
+      terminationGracePeriodSeconds: 60
